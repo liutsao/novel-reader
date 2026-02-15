@@ -32,6 +32,7 @@
             color: var(--text-color);
             font-family: -apple-system, "PingFang TC", "Heiti TC", "Microsoft JhengHei", sans-serif;
             transition: background-color 0.2s;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .card { background-color: var(--card-bg); border: 1px solid var(--border-color); }
@@ -50,22 +51,19 @@
             border-radius: 12px;
             margin: 2rem auto;
             display: block;
-            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
         }
 
         .progress-bar {
             height: 3px;
             background: var(--primary-color);
             position: fixed;
-            top: 0;
-            left: 0;
-            z-index: 100;
+            top: 0; left: 0; z-index: 100;
             transition: width 0.2s ease-out;
         }
 
         .loading-overlay {
-            background: rgba(0,0,0,0.5);
-            backdrop-filter: blur(4px);
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(8px);
         }
     </style>
 </head>
@@ -74,16 +72,16 @@
     <div id="progress" class="progress-bar" style="width: 0%"></div>
 
     <!-- 載入中遮罩 -->
-    <div id="loadingOverlay" class="fixed inset-0 z-[100] hidden flex-col items-center justify-center loading-overlay">
+    <div id="loadingOverlay" class="fixed inset-0 z-[100] hidden flex flex-col items-center justify-center loading-overlay">
         <div class="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent mb-4"></div>
-        <p class="text-white font-medium" id="loadingStatus">正在處理資料...</p>
+        <p class="text-white font-bold" id="loadingStatus">處理中...</p>
     </div>
 
     <!-- 主頁面 -->
     <div id="app" class="max-w-md mx-auto px-4 pt-8 pb-24">
         <header class="mb-8">
             <h1 class="text-2xl font-black mb-6 flex items-center gap-3">
-                <span class="bg-blue-600 text-white p-2 rounded-lg"><i class="fa-solid fa-book-open"></i></span>
+                <span class="bg-blue-600 text-white p-2 rounded-lg shadow-lg"><i class="fa-solid fa-book-open"></i></span>
                 Blogger Reader
             </h1>
             
@@ -97,7 +95,7 @@
                 </div>
                 <div class="flex gap-2">
                     <button onclick="refreshAll()" class="btn-secondary flex-1 p-4 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-sm active:scale-95 transition">
-                        <i class="fa-solid fa-rotate" id="refreshIcon"></i> 同步所有分類
+                        <i class="fa-solid fa-rotate" id="refreshIcon"></i> 同步所有更新
                     </button>
                     <button onclick="clearCache()" class="btn-secondary p-4 rounded-2xl text-sm font-bold shadow-sm active:scale-95 transition text-red-500">
                         <i class="fa-solid fa-trash"></i>
@@ -117,9 +115,9 @@
         </div>
     </div>
 
-    <!-- 閱讀器 -->
+    <!-- 閱讀器 Modal -->
     <div id="readerModal" class="fixed inset-0 z-50 hidden flex flex-col bg-[var(--bg-color)]">
-        <nav class="flex items-center justify-between p-4 border-b border-[var(--border-color)] card">
+        <nav class="flex items-center justify-between p-4 border-b border-[var(--border-color)] card shadow-sm">
             <button onclick="closeReader()" class="p-2 w-10 h-10 flex items-center justify-center"><i class="fa-solid fa-arrow-left text-xl"></i></button>
             <div class="flex gap-2">
                 <button onclick="toggleSettings()" class="p-2 w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/5"><i class="fa-solid fa-font"></i></button>
@@ -127,7 +125,6 @@
             </div>
         </nav>
         
-        <!-- 設定選單 -->
         <div id="settingsPanel" class="hidden absolute top-16 right-4 w-72 card p-6 rounded-3xl shadow-2xl z-50">
             <h4 class="text-xs font-black uppercase tracking-widest text-blue-500 mb-6">排版偏好</h4>
             <div class="space-y-6">
@@ -158,12 +155,12 @@
     </div>
 
     <script>
-        // --- IndexedDB 管理：儲存大量 HTML 內容 ---
-        const DB_NAME = 'BloggerReaderDB';
+        // --- IndexedDB ---
+        const DB_NAME = 'BloggerReaderDB_v2';
         const DB_VERSION = 1;
         let db;
 
-        function initDB() {
+        async function initDB() {
             return new Promise((resolve, reject) => {
                 const request = indexedDB.open(DB_NAME, DB_VERSION);
                 request.onupgradeneeded = (e) => {
@@ -172,11 +169,8 @@
                         db.createObjectStore('contents', { keyPath: 'id' });
                     }
                 };
-                request.onsuccess = (e) => {
-                    db = e.target.result;
-                    resolve(db);
-                };
-                request.onerror = (e) => reject(e);
+                request.onsuccess = (e) => { db = e.target.result; resolve(db); };
+                request.onerror = (e) => { console.error("DB Error", e); reject(e); };
             });
         }
 
@@ -197,21 +191,12 @@
             });
         }
 
-        async function removeContent(id) {
-            return new Promise((resolve) => {
-                const tx = db.transaction('contents', 'readwrite');
-                tx.objectStore('contents').delete(id);
-                tx.oncomplete = () => resolve();
-            });
-        }
-
-        // --- 應用程式狀態 ---
+        // --- 狀態 ---
         let state = {
-            sources: JSON.parse(localStorage.getItem('br_sources') || '[]'),
-            // 列表僅儲存 meta 資訊，不儲存內文以節省 localStorage 空間
-            articles: JSON.parse(localStorage.getItem('br_articles') || '[]'),
-            progress: JSON.parse(localStorage.getItem('br_progress') || '{}'),
-            settings: JSON.parse(localStorage.getItem('br_settings') || '{"theme":"light","fontSize":17,"lineHeight":1.7,"letterSpacing":0.03,"paragraphSpacing":1.5}'),
+            sources: JSON.parse(localStorage.getItem('br_sources_v2') || '[]'),
+            articles: JSON.parse(localStorage.getItem('br_articles_v2') || '[]'),
+            progress: JSON.parse(localStorage.getItem('br_progress_v2') || '{}'),
+            settings: JSON.parse(localStorage.getItem('br_settings_v2') || '{"theme":"light","fontSize":17,"lineHeight":1.7}'),
             currentPage: 1,
             pageSize: 15,
             currentArticleId: null,
@@ -219,39 +204,41 @@
         };
 
         window.onload = async () => {
-            try {
-                await initDB();
-                applySettings();
-                renderApp();
-                document.getElementById('articleBody').addEventListener('scroll', throttle(saveReadingProgress, 200));
-            } catch (e) {
-                console.error("DB Init Error", e);
-                alert("無法初始化本地資料庫，請重新整理頁面。");
-            }
+            console.log("App Initializing...");
+            await initDB();
+            applySettings();
+            renderApp();
+            document.getElementById('articleBody').addEventListener('scroll', throttle(saveReadingProgress, 200));
         };
 
-        // --- 資料獲取 ---
-        async function fetchAllArticles(baseUrl, startIndex = 1) {
+        // --- 修正後的資料抓取邏輯 ---
+        async function fetchAllArticles(feedUrl, startIndex = 1) {
+            console.log(`Fetching: ${feedUrl} | Start: ${startIndex}`);
             state.isFetching = true;
-            updateLoadingStatus(`載入中... 第 ${Math.ceil(startIndex/50) + 1} 頁`);
-            
-            const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}alt=json-in-script&start-index=${startIndex}&max-results=50`;
-            
+            setLoading(true);
+            updateLoadingStatus(`同步中 (${startIndex})...`);
+
+            // 確保 URL 使用 HTTPS 避免 GitHub Pages 的混合內容錯誤
+            const secureUrl = feedUrl.replace('http://', 'https://');
+            const connector = secureUrl.includes('?') ? '&' : '?';
+            const finalUrl = `${secureUrl}${connector}alt=json-in-script&start-index=${startIndex}&max-results=50`;
+
             return new Promise((resolve) => {
-                const callbackName = 'cb_' + Math.random().toString(36).substr(2, 9);
+                const callbackName = 'blogger_cb_' + Math.random().toString(36).substr(2, 9);
                 const script = document.createElement('script');
                 
                 window[callbackName] = async (data) => {
+                    console.log("Received data batch", data);
                     const entries = data.feed.entry || [];
                     const totalResults = parseInt(data.feed.openSearch$totalResults.$t);
                     
-                    await processBloggerData(entries, baseUrl);
+                    await processBloggerData(entries, feedUrl);
 
                     document.body.removeChild(script);
                     delete window[callbackName];
 
                     if (startIndex + entries.length <= totalResults && entries.length > 0) {
-                        resolve(fetchAllArticles(baseUrl, startIndex + entries.length));
+                        resolve(fetchAllArticles(feedUrl, startIndex + entries.length));
                     } else {
                         state.isFetching = false;
                         setLoading(false);
@@ -259,96 +246,105 @@
                     }
                 };
 
-                script.src = `${url}&callback=${callbackName}`;
+                script.onerror = () => {
+                    console.error("Script Load Error for:", finalUrl);
+                    alert("載入失敗！請確認網址是否支援 HTTPS 且為公開的 Blogger。");
+                    setLoading(false);
+                    resolve();
+                };
+
+                script.src = `${finalUrl}&callback=${callbackName}`;
                 document.body.appendChild(script);
             });
         }
 
+        function addSource() {
+            const input = document.getElementById('urlInput');
+            let rawUrl = input.value.trim();
+            if (!rawUrl) return;
+
+            console.log("Adding Source:", rawUrl);
+            try {
+                // 自動修復網址格式
+                if (!rawUrl.startsWith('http')) rawUrl = 'https://' + rawUrl;
+                const urlObj = new URL(rawUrl);
+                const domain = urlObj.origin;
+                let feedBase = `${domain}/feeds/posts/default`;
+                
+                // 處理標籤
+                if (rawUrl.includes('/search/label/')) {
+                    const parts = rawUrl.split('/search/label/');
+                    const label = parts[1].split('?')[0];
+                    feedBase = `${domain}/feeds/posts/default/-/${label}`;
+                }
+
+                if (!state.sources.includes(feedBase)) {
+                    state.sources.push(feedBase);
+                    localStorage.setItem('br_sources_v2', JSON.stringify(state.sources));
+                }
+                
+                fetchAllArticles(feedBase).then(() => {
+                    input.value = '';
+                });
+            } catch (e) {
+                console.error("URL Parse Error", e);
+                alert("網址無效，請輸入正確的網址（如：https://yourblog.blogspot.com）");
+            }
+        }
+
         async function processBloggerData(entries, sourceUrl) {
             const existingIds = new Set(state.articles.map(a => a.id));
-            
+            let newCount = 0;
+
             for (const entry of entries) {
                 const id = entry.id.$t;
                 if (!existingIds.has(id)) {
-                    const cats = entry.category ? entry.category.map(c => c.term) : ["未分類"];
                     const content = entry.content ? entry.content.$t : (entry.summary ? entry.summary.$t : "");
-                    const link = entry.link.find(l => l.rel === 'alternate')?.href;
-                    
-                    // 1. 內文存入 IndexedDB
                     await saveContent(id, cleanHTML(content));
                     
-                    // 2. 列表存入 localStorage (不含 content)
                     state.articles.push({
                         id,
                         title: entry.title.$t,
                         published: entry.published.$t,
-                        categories: cats,
-                        link,
+                        categories: entry.category ? entry.category.map(c => c.term) : ["未分類"],
                         sourceUrl
                     });
+                    newCount++;
                 }
             }
-
+            console.log(`Processed ${newCount} new articles.`);
             state.articles.sort((a, b) => new Date(b.published) - new Date(a.published));
             saveAndRender();
         }
 
-        function addSource() {
-            const input = document.getElementById('urlInput');
-            let url = input.value.trim();
-            if (!url) return;
-
-            try {
-                const urlObj = new URL(url);
-                const baseUrl = urlObj.origin;
-                let finalUrl = `${baseUrl}/feeds/posts/default`;
-                
-                if (url.includes('/search/label/')) {
-                    const label = url.split('/search/label/')[1].split('?')[0];
-                    finalUrl = `${baseUrl}/feeds/posts/default/-/${label}`;
-                }
-
-                if (!state.sources.includes(finalUrl)) {
-                    state.sources.push(finalUrl);
-                    localStorage.setItem('br_sources', JSON.stringify(state.sources));
-                }
-                
-                setLoading(true);
-                fetchAllArticles(finalUrl).then(() => {
-                    input.value = '';
-                });
-            } catch (e) {
-                alert("網址解析失敗，請輸入完整 Blogger 網址");
-            }
-        }
-
         function refreshAll() {
-            if (state.sources.length === 0) return;
-            setLoading(true);
+            if (state.sources.length === 0) return alert("請先新增來源網址");
+            console.log("Refreshing all sources...");
             const tasks = state.sources.map(s => fetchAllArticles(s));
-            Promise.all(tasks).then(() => setLoading(false));
+            Promise.all(tasks).then(() => {
+                console.log("All tasks completed.");
+                setLoading(false);
+            });
         }
 
-        // --- UI 渲染 ---
+        // --- UI ---
         function renderApp() {
             const container = document.getElementById('categoriesContainer');
             container.innerHTML = '';
 
             if (state.articles.length === 0) {
-                container.innerHTML = `<div class="text-center py-24 opacity-30 font-bold">尚無內容</div>`;
+                container.innerHTML = `<div class="text-center py-24 opacity-30 font-bold">目前無文章<br>請輸入網址並點擊同步</div>`;
                 document.getElementById('pagination').classList.add('hidden');
                 return;
             }
 
             const start = (state.currentPage - 1) * state.pageSize;
             const paged = state.articles.slice(start, start + state.pageSize);
-
             const groups = {};
             paged.forEach(art => {
-                art.categories.forEach(c => {
-                    if (!groups[c]) groups[c] = [];
-                    groups[c].push(art);
-                });
+                const primaryCat = art.categories[0];
+                if (!groups[primaryCat]) groups[primaryCat] = [];
+                groups[primaryCat].push(art);
             });
 
             Object.keys(groups).forEach(cat => {
@@ -356,7 +352,6 @@
                 groupEl.innerHTML = `
                     <div class="flex justify-between items-center mb-5">
                         <h2 class="text-sm font-black uppercase tracking-widest text-blue-500"># ${cat}</h2>
-                        <button onclick="deleteCategory('${cat}')" class="text-[10px] font-bold opacity-30 hover:opacity-100 uppercase tracking-tighter">刪除分類</button>
                     </div>
                     <div class="space-y-3">
                         ${groups[cat].map(a => renderCard(a)).join('')}
@@ -364,24 +359,20 @@
                 `;
                 container.appendChild(groupEl);
             });
-
             updatePagination();
         }
 
         function renderCard(article) {
             const prog = state.progress[article.id] || { percent: 0 };
-            const isDone = prog.percent > 98;
             return `
-                <div class="card p-5 rounded-3xl shadow-sm flex items-center gap-4 active:scale-95 transition" onclick="openReader('${article.id}')">
+                <div class="card p-5 rounded-3xl shadow-sm flex items-center gap-4 active:scale-95 transition cursor-pointer" onclick="openReader('${article.id}')">
                     <div class="flex-1 min-w-0">
-                        <h3 class="font-bold text-[15px] leading-snug mb-3 ${isDone ? 'opacity-40 font-normal' : ''}">${article.title}</h3>
+                        <h3 class="font-bold text-[15px] leading-snug mb-3 ${prog.percent > 98 ? 'opacity-30 font-normal' : ''}">${article.title}</h3>
                         <div class="h-1 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
                             <div class="h-full bg-blue-500 transition-all duration-500" style="width: ${prog.percent}%"></div>
                         </div>
                     </div>
-                    <button onclick="event.stopPropagation(); deleteArticle('${article.id}')" class="p-2 opacity-10 hover:opacity-100">
-                        <i class="fa-solid fa-xmark"></i>
-                    </button>
+                    <button onclick="event.stopPropagation(); deleteArticle('${article.id}')" class="p-2 opacity-10 hover:opacity-100"><i class="fa-solid fa-xmark"></i></button>
                 </div>
             `;
         }
@@ -391,18 +382,14 @@
             if (!art) return;
 
             setLoading(true);
-            updateLoadingStatus("載入內文中...");
             const htmlContent = await getContent(id);
             setLoading(false);
 
-            if (!htmlContent) {
-                alert("找不到內文資料，可能已被清理。請嘗試同步更新。");
-                return;
-            }
+            if (!htmlContent) return alert("內文丟失，請點擊同步重新下載。");
 
             state.currentArticleId = id;
             document.getElementById('articleTitle').innerText = art.title;
-            document.getElementById('articleMeta').innerHTML = `<span>${new Date(art.published).toLocaleDateString()}</span><span>${art.categories[0]}</span>`;
+            document.getElementById('articleMeta').innerHTML = `<span>${new Date(art.published).toLocaleDateString()}</span>`;
             document.getElementById('articleText').innerHTML = htmlContent;
             
             document.getElementById('readerModal').classList.remove('hidden');
@@ -411,18 +398,18 @@
             const saved = state.progress[id];
             if (saved) {
                 setTimeout(() => document.getElementById('articleBody').scrollTop = saved.top, 50);
-            } else {
-                document.getElementById('articleBody').scrollTop = 0;
             }
+        }
+
+        function closeReader() {
+            document.getElementById('readerModal').classList.add('hidden');
+            document.body.style.overflow = 'auto';
+            renderApp();
         }
 
         function cleanHTML(html) {
             const d = new DOMParser().parseFromString(html, 'text/html');
-            // 更激進的清理
             d.querySelectorAll('script, style, iframe, .blogger-post-footer, link, meta, noscript').forEach(n => n.remove());
-            d.querySelectorAll('[style]').forEach(el => {
-                if (!el.tagName.toLowerCase() === 'img') el.removeAttribute('style');
-            });
             return d.body.innerHTML;
         }
 
@@ -430,20 +417,60 @@
             const total = Math.ceil(state.articles.length / state.pageSize);
             const nav = document.getElementById('pagination');
             if (total <= 1) return nav.classList.add('hidden');
-            
             nav.classList.remove('hidden');
-            document.getElementById('pageDisplay').innerText = `PAGE ${state.currentPage} / ${total}`;
+            document.getElementById('pageDisplay').innerText = `第 ${state.currentPage} / ${total} 頁`;
             document.getElementById('prevBtn').disabled = state.currentPage === 1;
             document.getElementById('nextBtn').disabled = state.currentPage === total;
         }
 
-        function changePage(d) {
-            state.currentPage += d;
-            window.scrollTo(0,0);
-            renderApp();
-        }
+        function changePage(d) { state.currentPage += d; window.scrollTo(0,0); renderApp(); }
 
         function saveReadingProgress() {
             if (!state.currentArticleId) return;
             const b = document.getElementById('articleBody');
-            const total = b.scrollHeight - b.clientHeig
+            const total = b.scrollHeight - b.clientHeight;
+            const pct = total > 0 ? (b.scrollTop / total) * 100 : 0;
+            state.progress[state.currentArticleId] = { top: b.scrollTop, percent: Math.min(pct, 100) };
+            localStorage.setItem('br_progress_v2', JSON.stringify(state.progress));
+            document.getElementById('progress').style.width = pct + '%';
+        }
+
+        function applySettings() {
+            document.documentElement.setAttribute('data-theme', state.settings.theme);
+            document.getElementById('themeIcon').className = state.settings.theme === 'light' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+            document.documentElement.style.setProperty('--font-size', state.settings.fontSize + 'px');
+            document.documentElement.style.setProperty('--line-height', state.settings.lineHeight);
+            document.getElementById('fontSizeVal').innerText = state.settings.fontSize + 'px';
+            document.getElementById('lineHeightVal').innerText = state.settings.lineHeight;
+            localStorage.setItem('br_settings_v2', JSON.stringify(state.settings));
+        }
+
+        function toggleTheme() { state.settings.theme = state.settings.theme === 'light' ? 'dark' : 'light'; applySettings(); }
+        function toggleSettings() { document.getElementById('settingsPanel').classList.toggle('hidden'); }
+        function updateStyle(p, v) { state.settings[p] = parseFloat((state.settings[p] + v).toFixed(2)); applySettings(); }
+
+        function saveAndRender() {
+            localStorage.setItem('br_articles_v2', JSON.stringify(state.articles));
+            renderApp();
+        }
+
+        function clearCache() {
+            if (confirm("清理所有快取的內文？")) {
+                localStorage.clear();
+                const req = indexedDB.deleteDatabase(DB_NAME);
+                req.onsuccess = () => location.reload();
+            }
+        }
+
+        function setLoading(v) { document.getElementById('loadingOverlay').classList.toggle('hidden', !v); }
+        function updateLoadingStatus(t) { document.getElementById('loadingStatus').innerText = t; }
+
+        function throttle(f, l) {
+            let t;
+            return function() {
+                if (!t) { f.apply(this, arguments); t = true; setTimeout(() => t = false, l); }
+            }
+        }
+    </script>
+</body>
+</html>
