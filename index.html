@@ -15,6 +15,7 @@
             --primary-color: #2563eb;
             --secondary-btn-bg: #e5e7eb;
             --secondary-btn-text: #374151;
+            --progress-track: #e5e7eb; /* 日間模式進度條底色 */
         }
 
         [data-theme='dark'] {
@@ -25,6 +26,7 @@
             --primary-color: #60a5fa;
             --secondary-btn-bg: #334155;
             --secondary-btn-text: #f1f5f9;
+            --progress-track: #334155; /* 夜間模式進度條底色 */
         }
 
         body {
@@ -44,7 +46,12 @@
             font-size: var(--font-size, 17px);
         }
 
-        .is-read { opacity: 0.4 !important; text-decoration: line-through; font-weight: normal !important; }
+        /* 文章已讀樣式：變灰並加刪除線 */
+        .is-read { 
+            color: #9ca3af !important; 
+            text-decoration: line-through; 
+            opacity: 0.6;
+        }
 
         .progress-bar {
             height: 3px;
@@ -52,6 +59,7 @@
             position: fixed;
             top: 0; left: 0; z-index: 100;
             transition: width 0.2s ease-out;
+            display: none; /* 預設隱藏，僅在閱讀器內顯示 */
         }
 
         .loading-overlay {
@@ -75,11 +83,13 @@
 
     <div id="progress" class="progress-bar" style="width: 0%"></div>
 
+    <!-- 載入中遮罩 -->
     <div id="loadingOverlay" class="fixed inset-0 z-[100] hidden flex flex-col items-center justify-center loading-overlay">
         <div class="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent mb-4"></div>
         <p class="text-white font-bold" id="loadingStatus">處理中...</p>
     </div>
 
+    <!-- 主首頁介面 -->
     <div id="app" class="max-w-md mx-auto px-4 pt-8 pb-24">
         <header class="mb-8">
             <h1 class="text-2xl font-black mb-6 flex items-center justify-between">
@@ -106,6 +116,7 @@
             </div>
         </header>
 
+        <!-- 最近閱讀記錄 -->
         <div id="recentReadSection" class="mb-10 hidden">
             <h2 class="text-xs font-black uppercase tracking-widest text-blue-500 mb-4 flex items-center gap-2">
                 <i class="fa-solid fa-clock-rotate-left"></i> 最近閱讀記錄
@@ -113,6 +124,7 @@
             <div id="recentReadContainer" class="space-y-3"></div>
         </div>
 
+        <!-- 文章分類列表 -->
         <div class="mb-6">
             <h2 class="text-xs font-black uppercase tracking-widest text-blue-500 mb-4 flex justify-between">
                 <span>文章分類</span>
@@ -122,6 +134,7 @@
         </div>
     </div>
 
+    <!-- 閱讀器介面 Modal -->
     <div id="readerModal" class="fixed inset-0 z-50 hidden flex flex-col bg-[var(--bg-color)]">
         <nav class="flex items-center justify-between p-4 border-b border-[var(--border-color)] card shadow-sm">
             <button onclick="closeReader()" class="p-2 w-10 h-10 flex items-center justify-center"><i class="fa-solid fa-arrow-left text-xl"></i></button>
@@ -215,6 +228,7 @@
             document.getElementById('articleBody').addEventListener('scroll', throttle(saveReadingProgress, 200));
         };
 
+        // 抓取 Blogger 文章
         async function fetchAllArticles(feedUrl, startIndex = 1) {
             setLoading(true);
             updateLoadingStatus(`同步中 (${startIndex})...`);
@@ -314,7 +328,7 @@
                     </div>
                     <div class="flex flex-col items-end gap-1">
                         <span class="text-[10px] font-bold opacity-40">${Math.round(prog.percent)}%</span>
-                        <div class="w-16 h-1 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                        <div class="w-16 h-1 bg-[var(--progress-track)] rounded-full overflow-hidden">
                             <div class="h-full bg-blue-500" style="width: ${prog.percent}%"></div>
                         </div>
                     </div>
@@ -363,7 +377,7 @@
                 
                 list.forEach(a => {
                     const prog = state.progress[a.id] || { percent: 0 };
-                    const isRead = prog.percent > 95;
+                    const isRead = prog.percent > 95; // 已讀判定條件
                     const item = document.createElement('div');
                     item.className = `p-3 bg-[var(--card-bg)] rounded-xl text-xs font-medium shadow-sm active:scale-[0.98] transition cursor-pointer select-none ${isRead ? 'is-read' : ''}`;
                     item.innerText = a.title;
@@ -381,16 +395,14 @@
             });
         }
 
-        // 優化後的長按與短按邏輯：使用 PointerEvent 並防止重複執行
+        // Pointer 事件處理：解決觸發衝突並實作長按
         function addLongPress(el, onLong, onClick) {
             let timer;
             let moved = false;
             let isTriggered = false;
 
             const handleStart = (e) => {
-                // 防止滑鼠右鍵
                 if (e.button !== undefined && e.button !== 0) return;
-                
                 moved = false;
                 isTriggered = false;
                 timer = setTimeout(() => {
@@ -408,32 +420,22 @@
                     clearTimeout(timer);
                     timer = null;
                 }
-                
-                // 如果沒移動且沒觸發長按，則執行短按
                 if (!moved && !isTriggered) {
                     onClick();
                 }
-                
-                // 防止事件穿透與重複觸發
                 if (e.cancelable) e.preventDefault();
             };
 
-            const handleMove = () => { moved = true; };
-
-            // 移除舊監聽器，使用 pointer 事件統一處理行動端與桌面端
             el.onpointerdown = handleStart;
             el.onpointerup = handleEnd;
-            el.onpointermove = handleMove;
+            el.onpointermove = () => { moved = true; };
             el.onpointerleave = () => { if (timer) clearTimeout(timer); };
         }
 
         function toggleCat(catName) {
             const index = state.expandedCats.indexOf(catName);
-            if (index > -1) {
-                state.expandedCats.splice(index, 1);
-            } else {
-                state.expandedCats.push(catName);
-            }
+            if (index > -1) state.expandedCats.splice(index, 1);
+            else state.expandedCats.push(catName);
             renderCategories();
         }
 
@@ -444,18 +446,35 @@
             const html = await getContent(id);
             setLoading(false);
             if (!html) return alert("文章內容不存在，請重試。");
+            
             state.currentArticleId = id;
             state.currentCat = catName;
             state.lastReadByCat[catName] = id;
             localStorage.setItem('br_last_read_v4', JSON.stringify(state.lastReadByCat));
+            
             document.getElementById('articleTitle').innerText = art.title;
             document.getElementById('articleMeta').innerHTML = `<span>${new Date(art.published).toLocaleDateString()}</span> • <span>${catName}</span>`;
             document.getElementById('articleText').innerHTML = html;
+            
             updateNavigationButtons();
+            
+            // 進入閱讀器，顯示進度條並恢復滾動位置
+            const progressEl = document.getElementById('progress');
+            progressEl.style.display = 'block';
+            
             document.getElementById('readerModal').classList.remove('hidden');
             document.body.style.overflow = 'hidden';
+            
             const saved = state.progress[id];
-            document.getElementById('articleBody').scrollTop = saved ? saved.top : 0;
+            const articleBody = document.getElementById('articleBody');
+            articleBody.scrollTop = saved ? saved.top : 0;
+            
+            // 初始化進度條寬度
+            setTimeout(() => {
+                const total = articleBody.scrollHeight - articleBody.clientHeight;
+                const pct = total > 0 ? (articleBody.scrollTop / total) * 100 : 0;
+                progressEl.style.width = pct + '%';
+            }, 100);
         }
 
         async function deleteArticle(id) {
@@ -487,7 +506,12 @@
             const pct = total > 0 ? (b.scrollTop / total) * 100 : 0;
             state.progress[state.currentArticleId] = { top: b.scrollTop, percent: Math.min(pct, 100) };
             localStorage.setItem('br_progress_v4', JSON.stringify(state.progress));
-            document.getElementById('progress').style.width = pct + '%';
+            
+            // 更新頂部進度條
+            const progressEl = document.getElementById('progress');
+            if (progressEl.style.display !== 'none') {
+                progressEl.style.width = pct + '%';
+            }
         }
 
         function updateNavigationButtons() {
@@ -553,14 +577,24 @@
             return d.body.innerHTML;
         }
 
-        function toggleTheme() { state.settings.theme = state.settings.theme === 'light' ? 'dark' : 'light'; applySettings(); }
+        function toggleTheme() { state.settings.theme = state.settings.theme === 'light' ? 'dark' : 'light'; applySettings(); renderApp(); }
         function toggleSettings() { document.getElementById('settingsPanel').classList.toggle('hidden'); }
         function updateStyle(p, v) { 
             state.settings[p] += v; 
             applySettings(); 
         }
         function saveAndRender() { localStorage.setItem('br_articles_v4', JSON.stringify(state.articles)); renderApp(); }
-        function closeReader() { document.getElementById('readerModal').classList.add('hidden'); document.body.style.overflow = 'auto'; renderApp(); }
+        
+        function closeReader() { 
+            const progressEl = document.getElementById('progress');
+            progressEl.style.display = 'none';
+            progressEl.style.width = '0%';
+            
+            document.getElementById('readerModal').classList.add('hidden'); 
+            document.body.style.overflow = 'auto'; 
+            renderApp(); 
+        }
+
         function setLoading(v) { document.getElementById('loadingOverlay').classList.toggle('hidden', !v); }
         function updateLoadingStatus(t) { document.getElementById('loadingStatus').innerText = t; }
         function throttle(f, l) { let t; return function() { if (!t) { f.apply(this, arguments); t = true; setTimeout(() => t = false, l); } } }
