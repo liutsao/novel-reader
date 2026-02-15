@@ -44,7 +44,6 @@
             font-size: var(--font-size, 17px);
         }
 
-        /* 已讀樣式 */
         .is-read { opacity: 0.4 !important; text-decoration: line-through; font-weight: normal !important; }
 
         .progress-bar {
@@ -76,13 +75,11 @@
 
     <div id="progress" class="progress-bar" style="width: 0%"></div>
 
-    <!-- 載入遮罩 -->
     <div id="loadingOverlay" class="fixed inset-0 z-[100] hidden flex flex-col items-center justify-center loading-overlay">
         <div class="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent mb-4"></div>
         <p class="text-white font-bold" id="loadingStatus">處理中...</p>
     </div>
 
-    <!-- 主頁面 -->
     <div id="app" class="max-w-md mx-auto px-4 pt-8 pb-24">
         <header class="mb-8">
             <h1 class="text-2xl font-black mb-6 flex items-center justify-between">
@@ -109,7 +106,6 @@
             </div>
         </header>
 
-        <!-- 最近閱讀 (直向列表) -->
         <div id="recentReadSection" class="mb-10 hidden">
             <h2 class="text-xs font-black uppercase tracking-widest text-blue-500 mb-4 flex items-center gap-2">
                 <i class="fa-solid fa-clock-rotate-left"></i> 最近閱讀記錄
@@ -117,7 +113,6 @@
             <div id="recentReadContainer" class="space-y-3"></div>
         </div>
 
-        <!-- 文章分類 -->
         <div class="mb-6">
             <h2 class="text-xs font-black uppercase tracking-widest text-blue-500 mb-4 flex justify-between">
                 <span>文章分類</span>
@@ -127,7 +122,6 @@
         </div>
     </div>
 
-    <!-- 閱讀器 Modal -->
     <div id="readerModal" class="fixed inset-0 z-50 hidden flex flex-col bg-[var(--bg-color)]">
         <nav class="flex items-center justify-between p-4 border-b border-[var(--border-color)] card shadow-sm">
             <button onclick="closeReader()" class="p-2 w-10 h-10 flex items-center justify-center"><i class="fa-solid fa-arrow-left text-xl"></i></button>
@@ -173,7 +167,6 @@
         const DB_VERSION = 1;
         let db;
 
-        // 初始化資料庫
         async function initDB() {
             return new Promise((resolve, reject) => {
                 const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -204,14 +197,13 @@
             tx.objectStore('contents').delete(id);
         }
 
-        // 應用狀態管理
         let state = {
             sources: JSON.parse(localStorage.getItem('br_sources_v4') || '[]'),
             articles: JSON.parse(localStorage.getItem('br_articles_v4') || '[]'),
             progress: JSON.parse(localStorage.getItem('br_progress_v4') || '{}'),
             settings: JSON.parse(localStorage.getItem('br_settings_v4') || '{"theme":"light","fontSize":17}'),
             lastReadByCat: JSON.parse(localStorage.getItem('br_last_read_v4') || '{}'),
-            expandedCats: [], // 記錄哪些分類是展開的
+            expandedCats: [],
             currentCat: null,
             currentArticleId: null
         };
@@ -223,7 +215,6 @@
             document.getElementById('articleBody').addEventListener('scroll', throttle(saveReadingProgress, 200));
         };
 
-        // Blogger 文章抓取
         async function fetchAllArticles(feedUrl, startIndex = 1) {
             setLoading(true);
             updateLoadingStatus(`同步中 (${startIndex})...`);
@@ -265,7 +256,6 @@
                                 });
                             }
                         }
-
                         state.articles.sort((a, b) => new Date(b.published) - new Date(a.published));
                         saveAndRender();
 
@@ -290,7 +280,6 @@
             });
         }
 
-        // 渲染主介面
         function renderApp() {
             renderRecentRead();
             renderCategories();
@@ -316,7 +305,7 @@
 
                 const prog = state.progress[artId] || { percent: 0 };
                 const div = document.createElement('div');
-                div.className = 'card p-4 rounded-2xl shadow-sm active:scale-[0.98] transition flex items-center gap-4';
+                div.className = 'card p-4 rounded-2xl shadow-sm active:scale-[0.98] transition flex items-center gap-4 cursor-pointer';
                 div.onclick = () => openReader(artId, cat);
                 div.innerHTML = `
                     <div class="flex-1 min-w-0">
@@ -358,15 +347,13 @@
                 const div = document.createElement('div');
                 div.className = 'card rounded-2xl overflow-hidden mb-2 shadow-sm';
                 
-                // 標題區域
                 const header = document.createElement('button');
-                header.className = 'w-full p-4 flex justify-between items-center font-bold text-sm touch-action-none';
+                header.className = 'w-full p-4 flex justify-between items-center font-bold text-sm select-none';
                 header.innerHTML = `
                     <span>${catName} <span class="opacity-30 ml-1">(${list.length})</span></span>
                     <i class="fa-solid fa-chevron-down opacity-20 transition-transform ${isExpanded ? 'rotate-180' : ''}"></i>
                 `;
                 
-                // 長按刪除分類，短按展開
                 addLongPress(header, () => {
                     if (confirm(`確定刪除「${catName}」分類下的所有文章與緩存？`)) deleteCategory(catName);
                 }, () => toggleCat(catName));
@@ -378,7 +365,7 @@
                     const prog = state.progress[a.id] || { percent: 0 };
                     const isRead = prog.percent > 95;
                     const item = document.createElement('div');
-                    item.className = `p-3 bg-[var(--card-bg)] rounded-xl text-xs font-medium shadow-sm active:scale-[0.98] transition touch-action-none ${isRead ? 'is-read' : ''}`;
+                    item.className = `p-3 bg-[var(--card-bg)] rounded-xl text-xs font-medium shadow-sm active:scale-[0.98] transition cursor-pointer select-none ${isRead ? 'is-read' : ''}`;
                     item.innerText = a.title;
                     
                     addLongPress(item, () => {
@@ -394,47 +381,62 @@
             });
         }
 
-        // 長按與短按區分邏輯
+        // 優化後的長按與短按邏輯：使用 PointerEvent 並防止重複執行
         function addLongPress(el, onLong, onClick) {
             let timer;
             let moved = false;
-            const start = () => {
+            let isTriggered = false;
+
+            const handleStart = (e) => {
+                // 防止滑鼠右鍵
+                if (e.button !== undefined && e.button !== 0) return;
+                
                 moved = false;
+                isTriggered = false;
                 timer = setTimeout(() => {
                     if (!moved) {
+                        isTriggered = true;
                         el.classList.add('shaking');
                         setTimeout(() => el.classList.remove('shaking'), 500);
                         onLong();
-                        timer = null;
                     }
                 }, 800);
             };
-            const end = () => {
+
+            const handleEnd = (e) => {
                 if (timer) {
                     clearTimeout(timer);
                     timer = null;
-                    if (!moved) onClick();
                 }
+                
+                // 如果沒移動且沒觸發長按，則執行短按
+                if (!moved && !isTriggered) {
+                    onClick();
+                }
+                
+                // 防止事件穿透與重複觸發
+                if (e.cancelable) e.preventDefault();
             };
-            el.addEventListener('touchstart', start, { passive: true });
-            el.addEventListener('touchend', end, { passive: true });
-            el.addEventListener('touchmove', () => { moved = true; }, { passive: true });
-            el.addEventListener('mousedown', start);
-            el.addEventListener('mouseup', end);
-            el.addEventListener('mouseleave', () => clearTimeout(timer));
+
+            const handleMove = () => { moved = true; };
+
+            // 移除舊監聽器，使用 pointer 事件統一處理行動端與桌面端
+            el.onpointerdown = handleStart;
+            el.onpointerup = handleEnd;
+            el.onpointermove = handleMove;
+            el.onpointerleave = () => { if (timer) clearTimeout(timer); };
         }
 
-        // 展開/收合分類
         function toggleCat(catName) {
-            if (state.expandedCats.includes(catName)) {
-                state.expandedCats = state.expandedCats.filter(c => c !== catName);
+            const index = state.expandedCats.indexOf(catName);
+            if (index > -1) {
+                state.expandedCats.splice(index, 1);
             } else {
                 state.expandedCats.push(catName);
             }
-            renderCategories(); // 重新渲染列表部分
+            renderCategories();
         }
 
-        // 開啟閱讀器
         async function openReader(id, catName) {
             const art = state.articles.find(a => a.id === id);
             if (!art) return;
@@ -513,6 +515,7 @@
             const icon = state.settings.theme === 'light' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
             document.getElementById('mainThemeIcon').className = icon;
             document.documentElement.style.setProperty('--font-size', state.settings.fontSize + 'px');
+            document.getElementById('fontSizeVal').innerText = state.settings.fontSize + 'px';
             localStorage.setItem('br_settings_v4', JSON.stringify(state.settings));
         }
 
@@ -554,7 +557,6 @@
         function toggleSettings() { document.getElementById('settingsPanel').classList.toggle('hidden'); }
         function updateStyle(p, v) { 
             state.settings[p] += v; 
-            document.getElementById('fontSizeVal').innerText = state.settings.fontSize + 'px';
             applySettings(); 
         }
         function saveAndRender() { localStorage.setItem('br_articles_v4', JSON.stringify(state.articles)); renderApp(); }
