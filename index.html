@@ -13,8 +13,8 @@
             --card-bg: #ffffff;
             --border-color: #e5e7eb;
             --primary-color: #2563eb;
-            --btn-secondary-bg: #e5e7eb;
-            --btn-secondary-text: #374151;
+            --secondary-btn-bg: #e5e7eb;
+            --secondary-btn-text: #374151;
         }
 
         [data-theme='dark'] {
@@ -23,8 +23,8 @@
             --card-bg: #1e293b;
             --border-color: #334155;
             --primary-color: #60a5fa;
-            --btn-secondary-bg: #334155;
-            --btn-secondary-text: #f1f5f9;
+            --secondary-btn-bg: #334155;
+            --secondary-btn-text: #f1f5f9;
         }
 
         body {
@@ -33,25 +33,18 @@
             font-family: -apple-system, "PingFang TC", "Heiti TC", "Microsoft JhengHei", sans-serif;
             transition: background-color 0.2s;
             -webkit-tap-highlight-color: transparent;
+            user-select: none;
         }
 
         .card { background-color: var(--card-bg); border: 1px solid var(--border-color); }
-        .btn-secondary { background-color: var(--btn-secondary-bg); color: var(--btn-secondary-text); }
-
+        .btn-secondary { background-color: var(--secondary-btn-bg); color: var(--secondary-btn-text); }
+        
         .reader-content {
             line-height: var(--line-height, 1.7);
             font-size: var(--font-size, 17px);
-            letter-spacing: var(--letter-spacing, 0.03em);
         }
 
-        .reader-content p { margin-bottom: var(--paragraph-spacing, 1.5em); }
-        .reader-content img {
-            max-width: 100% !important;
-            height: auto !important;
-            border-radius: 12px;
-            margin: 2rem auto;
-            display: block;
-        }
+        .is-read { opacity: 0.4 !important; text-decoration: line-through; font-weight: normal !important; }
 
         .progress-bar {
             height: 3px;
@@ -66,9 +59,16 @@
             backdrop-filter: blur(8px);
         }
 
-        /* 隱藏滾動條但保持功能 */
+        @keyframes shake {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(-2px); }
+            50% { transform: translateX(2px); }
+            75% { transform: translateX(-2px); }
+            100% { transform: translateX(0); }
+        }
+        .shaking { animation: shake 0.2s infinite; }
+
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
 <body class="min-h-screen">
@@ -84,41 +84,46 @@
     <!-- 主頁面 -->
     <div id="app" class="max-w-md mx-auto px-4 pt-8 pb-24">
         <header class="mb-8">
-            <h1 class="text-2xl font-black mb-6 flex items-center gap-3">
-                <span class="bg-blue-600 text-white p-2 rounded-lg shadow-lg"><i class="fa-solid fa-book-open"></i></span>
-                Blogger Reader
+            <h1 class="text-2xl font-black mb-6 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="bg-blue-600 text-white p-2 rounded-lg shadow-lg"><i class="fa-solid fa-book-open"></i></span>
+                    Blogger Reader
+                </div>
+                <button onclick="toggleTheme()" class="p-2 w-10 h-10 flex items-center justify-center rounded-full btn-secondary">
+                    <i id="mainThemeIcon" class="fa-solid fa-moon"></i>
+                </button>
             </h1>
             
             <div class="space-y-3">
                 <div class="flex gap-2">
                     <input type="text" id="urlInput" placeholder="輸入 Blogger 網址或標籤網址" 
-                        class="flex-1 p-4 rounded-2xl card focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm shadow-sm">
+                        class="flex-1 p-4 rounded-2xl card focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm shadow-sm bg-[var(--card-bg)] text-[var(--text-color)]">
                     <button onclick="addSource()" class="bg-blue-600 text-white w-14 rounded-2xl shadow-lg active:scale-95 transition flex items-center justify-center">
                         <i class="fa-solid fa-plus text-lg"></i>
                     </button>
                 </div>
-                <div class="flex gap-2">
-                    <button onclick="refreshAll()" class="btn-secondary flex-1 p-4 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-sm active:scale-95 transition">
-                        <i class="fa-solid fa-rotate"></i> 同步更新
-                    </button>
-                    <button onclick="clearCache()" class="btn-secondary p-4 rounded-2xl text-sm font-bold shadow-sm active:scale-95 transition text-red-500">
-                        <i class="fa-solid fa-trash"></i>
-                    </button>
-                </div>
+                <button onclick="refreshAll()" class="w-full btn-secondary p-4 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-sm active:scale-95 transition">
+                    <i class="fa-solid fa-rotate"></i> 同步更新所有分類
+                </button>
             </div>
         </header>
 
-        <!-- 上次閱讀 -->
-        <div id="lastReadContainer" class="mb-10 hidden">
+        <!-- 最近閱讀 (改為直向列表) -->
+        <div id="recentReadSection" class="mb-10 hidden">
             <h2 class="text-xs font-black uppercase tracking-widest text-blue-500 mb-4 flex items-center gap-2">
-                <i class="fa-solid fa-clock-rotate-left"></i> 上次閱讀
+                <i class="fa-solid fa-clock-rotate-left"></i> 最近閱讀記錄
             </h2>
-            <div id="lastReadCard"></div>
+            <div id="recentReadContainer" class="space-y-3">
+                <!-- 直向卡片列表 -->
+            </div>
         </div>
 
-        <!-- 分類列表 -->
+        <!-- 文章分類 -->
         <div class="mb-6">
-            <h2 class="text-xs font-black uppercase tracking-widest text-blue-500 mb-4">文章分類</h2>
+            <h2 class="text-xs font-black uppercase tracking-widest text-blue-500 mb-4 flex justify-between">
+                <span>文章分類</span>
+                <span class="text-[10px] opacity-40 font-normal">長按分類或文章可刪除</span>
+            </h2>
             <div id="categoriesContainer" class="space-y-3"></div>
         </div>
     </div>
@@ -129,11 +134,9 @@
             <button onclick="closeReader()" class="p-2 w-10 h-10 flex items-center justify-center"><i class="fa-solid fa-arrow-left text-xl"></i></button>
             <div class="flex gap-2">
                 <button onclick="toggleSettings()" class="p-2 w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/5"><i class="fa-solid fa-font"></i></button>
-                <button onclick="toggleTheme()" class="p-2 w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/5"><i id="themeIcon" class="fa-solid fa-moon"></i></button>
             </div>
         </nav>
         
-        <!-- 設定選單 -->
         <div id="settingsPanel" class="hidden absolute top-16 right-4 w-72 card p-6 rounded-3xl shadow-2xl z-50">
             <h4 class="text-xs font-black uppercase tracking-widest text-blue-500 mb-6">排版偏好</h4>
             <div class="space-y-6">
@@ -148,12 +151,11 @@
             </div>
         </div>
 
-        <div id="articleBody" class="flex-1 overflow-y-auto px-6 pt-8 scroll-smooth no-scrollbar">
+        <div id="articleBody" class="flex-1 overflow-y-auto px-6 pt-8 scroll-smooth no-scrollbar" style="user-select: text;">
             <h1 id="articleTitle" class="text-2xl font-black mb-4 leading-tight"></h1>
             <div id="articleMeta" class="text-xs font-bold opacity-40 mb-8"></div>
             <div id="articleText" class="reader-content"></div>
             
-            <!-- 上下篇導覽 -->
             <div class="mt-12 pb-24 border-t border-[var(--border-color)] pt-8 flex flex-col gap-4">
                 <button id="prevArticleBtn" onclick="navigateArticle(-1)" class="card p-5 rounded-2xl flex items-center gap-4 active:scale-95 transition hidden">
                     <i class="fa-solid fa-chevron-left text-blue-500"></i>
@@ -168,8 +170,7 @@
     </div>
 
     <script>
-        // --- IndexedDB ---
-        const DB_NAME = 'BloggerReaderDB_v3';
+        const DB_NAME = 'BloggerReaderDB_v4';
         const DB_VERSION = 1;
         let db;
 
@@ -198,14 +199,18 @@
             });
         }
 
-        // --- 狀態 ---
+        async function deleteContent(id) {
+            const tx = db.transaction('contents', 'readwrite');
+            tx.objectStore('contents').delete(id);
+        }
+
         let state = {
-            sources: JSON.parse(localStorage.getItem('br_sources_v3') || '[]'),
-            articles: JSON.parse(localStorage.getItem('br_articles_v3') || '[]'),
-            progress: JSON.parse(localStorage.getItem('br_progress_v3') || '{}'),
-            settings: JSON.parse(localStorage.getItem('br_settings_v3') || '{"theme":"light","fontSize":17}'),
-            lastReadId: localStorage.getItem('br_last_read_v3'),
-            currentCat: null, // 用於導覽
+            sources: JSON.parse(localStorage.getItem('br_sources_v4') || '[]'),
+            articles: JSON.parse(localStorage.getItem('br_articles_v4') || '[]'),
+            progress: JSON.parse(localStorage.getItem('br_progress_v4') || '{}'),
+            settings: JSON.parse(localStorage.getItem('br_settings_v4') || '{"theme":"light","fontSize":17}'),
+            lastReadByCat: JSON.parse(localStorage.getItem('br_last_read_v4') || '{}'),
+            currentCat: null,
             currentArticleId: null
         };
 
@@ -214,6 +219,209 @@
             applySettings();
             renderApp();
             document.getElementById('articleBody').addEventListener('scroll', throttle(saveReadingProgress, 200));
+        };
+
+        async function fetchAllArticles(feedUrl, startIndex = 1) {
+            setLoading(true);
+            const secureUrl = feedUrl.replace('http://', 'https://');
+            const finalUrl = `${secureUrl}${secureUrl.includes('?') ? '&' : '?'}alt=json-in-script&start-index=${startIndex}&max-results=50`;
+            return new Promise((resolve) => {
+                const callbackName = 'blogger_cb_' + Math.random().toString(36).substr(2, 9);
+                const script = document.createElement('script');
+                window[callbackName] = async (data) => {
+                    const entries = data.feed.entry || [];
+                    for (const entry of entries) {
+                        const id = entry.id.$t;
+                        if (!state.articles.some(a => a.id === id)) {
+                            const content = entry.content ? entry.content.$t : (entry.summary ? entry.summary.$t : "");
+                            await saveContent(id, cleanHTML(content));
+                            state.articles.push({
+                                id, title: entry.title.$t, published: entry.published.$t,
+                                categories: entry.category ? entry.category.map(c => c.term) : ["未分類"]
+                            });
+                        }
+                    }
+                    state.articles.sort((a, b) => new Date(b.published) - new Date(a.published));
+                    saveAndRender();
+                    document.body.removeChild(script);
+                    delete window[callbackName];
+                    if (startIndex + entries.length <= parseInt(data.feed.openSearch$totalResults.$t) && entries.length > 0) {
+                        resolve(fetchAllArticles(feedUrl, startIndex + entries.length));
+                    } else { setLoading(false); resolve(); }
+                };
+                script.src = `${finalUrl}&callback=${callbackName}`;
+                document.body.appendChild(script);
+            });
+        }
+
+        function renderApp() {
+            renderRecentRead();
+            renderCategories();
+        }
+
+        function renderRecentRead() {
+            const section = document.getElementById('recentReadSection');
+            const container = document.getElementById('recentReadContainer');
+            const catKeys = Object.keys(state.lastReadByCat);
+            
+            if (catKeys.length === 0) {
+                section.classList.add('hidden');
+                return;
+            }
+
+            section.classList.remove('hidden');
+            container.innerHTML = '';
+
+            // 直向顯示
+            catKeys.forEach(cat => {
+                const artId = state.lastReadByCat[cat];
+                const art = state.articles.find(a => a.id === artId);
+                if (!art) return;
+
+                const prog = state.progress[artId] || { percent: 0 };
+                const div = document.createElement('div');
+                div.className = 'card p-4 rounded-2xl shadow-sm active:scale-[0.98] transition flex items-center gap-4';
+                div.onclick = () => openReader(artId, cat);
+                div.innerHTML = `
+                    <div class="flex-1 min-w-0">
+                        <div class="text-[10px] font-black text-blue-500 uppercase mb-1 truncate"># ${cat}</div>
+                        <div class="text-sm font-bold truncate">${art.title}</div>
+                    </div>
+                    <div class="flex flex-col items-end gap-1">
+                        <span class="text-[10px] font-bold opacity-40">${Math.round(prog.percent)}%</span>
+                        <div class="w-16 h-1 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                            <div class="h-full bg-blue-500" style="width: ${prog.percent}%"></div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function renderCategories() {
+            const container = document.getElementById('categoriesContainer');
+            container.innerHTML = '';
+            
+            const catsMap = {};
+            state.articles.forEach(art => {
+                art.categories.forEach(c => {
+                    if (!catsMap[c]) catsMap[c] = [];
+                    catsMap[c].push(art);
+                });
+            });
+
+            Object.keys(catsMap).sort().forEach(catName => {
+                const list = catsMap[catName];
+                const div = document.createElement('div');
+                div.className = 'card rounded-2xl overflow-hidden mb-2 shadow-sm';
+                
+                const header = document.createElement('button');
+                header.className = 'w-full p-4 flex justify-between items-center font-bold text-sm touch-action-none';
+                header.innerHTML = `<span>${catName} <span class="opacity-30 ml-1">(${list.length})</span></span><i class="fa-solid fa-chevron-down opacity-20 transition-transform"></i>`;
+                
+                addLongPress(header, () => {
+                    if (confirm(`確定刪除「${catName}」分類下的所有文章與緩存？`)) deleteCategory(catName);
+                }, () => toggleCat(header));
+
+                const listDiv = document.createElement('div');
+                listDiv.className = 'cat-list hidden border-t border-[var(--border-color)] bg-black/5 p-2 space-y-2';
+                
+                list.forEach(a => {
+                    const prog = state.progress[a.id] || { percent: 0 };
+                    const isRead = prog.percent > 95;
+                    const item = document.createElement('div');
+                    item.className = `p-3 bg-[var(--card-bg)] rounded-xl text-xs font-medium shadow-sm active:scale-[0.98] transition touch-action-none ${isRead ? 'is-read' : ''}`;
+                    item.innerText = a.title;
+                    
+                    addLongPress(item, () => {
+                        if (confirm(`刪除此文章緩存：\n${a.title}`)) deleteArticle(a.id);
+                    }, () => openReader(a.id, catName));
+
+                    listDiv.appendChild(item);
+                });
+
+                div.appendChild(header);
+                div.appendChild(listDiv);
+                container.appendChild(div);
+            });
+        }
+
+        function addLongPress(el, onLong, onClick) {
+            let timer;
+            let moved = false;
+            const start = () => {
+                moved = false;
+                timer = setTimeout(() => {
+                    if (!moved) {
+                        el.classList.add('shaking');
+                        setTimeout(() => el.classList.remove('shaking'), 500);
+                        onLong();
+                        timer = null;
+                    }
+                }, 800);
+            };
+            const end = () => {
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                    if (!moved) onClick();
+                }
+            };
+            el.addEventListener('touchstart', start, { passive: true });
+            el.addEventListener('touchend', end, { passive: true });
+            el.addEventListener('touchmove', () => { moved = true; }, { passive: true });
+            el.addEventListener('mousedown', start);
+            el.addEventListener('mouseup', end);
+            el.addEventListener('mouseleave', () => clearTimeout(timer));
+        }
+
+        async function openReader(id, catName) {
+            const art = state.articles.find(a => a.id === id);
+            if (!art) return;
+            setLoading(true);
+            const html = await getContent(id);
+            setLoading(false);
+            if (!html) return alert("文章內容不存在，請重試。");
+            state.currentArticleId = id;
+            state.currentCat = catName;
+            state.lastReadByCat[catName] = id;
+            localStorage.setItem('br_last_read_v4', JSON.stringify(state.lastReadByCat));
+            document.getElementById('articleTitle').innerText = art.title;
+            document.getElementById('articleMeta').innerHTML = `<span>${new Date(art.published).toLocaleDateString()}</span> • <span>${catName}</span>`;
+            document.getElementById('articleText').innerHTML = html;
+            updateNavigationButtons();
+            document.getElementById('readerModal').classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+            const saved = state.progress[id];
+            document.getElementById('articleBody').scrollTop = saved ? saved.top : 0;
+        }
+
+        async function deleteArticle(id) {
+            state.articles = state.articles.filter(a => a.id !== id);
+            delete state.progress[id];
+            Object.keys(state.lastReadByCat).forEach(k => {
+                if (state.lastReadByCat[k] === id) delete state.lastReadByCat[k];
+            });
+            await deleteContent(id);
+            saveAndRender();
+        }
+
+        async function deleteCategory(catName) {
+            const toDelete = state.articles.filter(a => a.categories.includes(catName));
+            for (let a of toDelete) {
+                await deleteContent(a.id);
+                delete state.progress[a.id];
+            }
+            state.articles = state.articles.filter(a => !a.categories.includes(catName));
+            delete state.lastReadByCat[catName];
+            saveAndRender();
+        }
+
+        function saveReadingProgress() {
+            if (!state.currentArticleId) return;
+            const b = document.getElementById('articleBody');
+            const total = b.scrollHeight - b.clientHeight;
+                        document.getElementById('articleBody').addEventListener('scroll', throttle(saveReadingProgress, 200));
         };
 
         // --- 資料抓取 ---
