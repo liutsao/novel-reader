@@ -44,6 +44,7 @@
             font-size: var(--font-size, 17px);
         }
 
+        /* 已讀樣式 */
         .is-read { opacity: 0.4 !important; text-decoration: line-through; font-weight: normal !important; }
 
         .progress-bar {
@@ -78,9 +79,10 @@
     <!-- 載入遮罩 -->
     <div id="loadingOverlay" class="fixed inset-0 z-[100] hidden flex flex-col items-center justify-center loading-overlay">
         <div class="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent mb-4"></div>
-        <p class="text-white font-bold" id="loadingStatus">同步中...</p>
+        <p class="text-white font-bold" id="loadingStatus">處理中...</p>
     </div>
 
+    <!-- 主頁面 -->
     <div id="app" class="max-w-md mx-auto px-4 pt-8 pb-24">
         <header class="mb-8">
             <h1 class="text-2xl font-black mb-6 flex items-center justify-between">
@@ -107,7 +109,7 @@
             </div>
         </header>
 
-        <!-- 最近閱讀 -->
+        <!-- 最近閱讀 (直向列表) -->
         <div id="recentReadSection" class="mb-10 hidden">
             <h2 class="text-xs font-black uppercase tracking-widest text-blue-500 mb-4 flex items-center gap-2">
                 <i class="fa-solid fa-clock-rotate-left"></i> 最近閱讀記錄
@@ -171,6 +173,7 @@
         const DB_VERSION = 1;
         let db;
 
+        // 初始化資料庫
         async function initDB() {
             return new Promise((resolve, reject) => {
                 const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -201,12 +204,14 @@
             tx.objectStore('contents').delete(id);
         }
 
+        // 應用狀態管理
         let state = {
             sources: JSON.parse(localStorage.getItem('br_sources_v4') || '[]'),
             articles: JSON.parse(localStorage.getItem('br_articles_v4') || '[]'),
             progress: JSON.parse(localStorage.getItem('br_progress_v4') || '{}'),
             settings: JSON.parse(localStorage.getItem('br_settings_v4') || '{"theme":"light","fontSize":17}'),
             lastReadByCat: JSON.parse(localStorage.getItem('br_last_read_v4') || '{}'),
+            expandedCats: [], // 記錄哪些分類是展開的
             currentCat: null,
             currentArticleId: null
         };
@@ -218,24 +223,21 @@
             document.getElementById('articleBody').addEventListener('scroll', throttle(saveReadingProgress, 200));
         };
 
-        // 修復後的抓取邏輯
+        // Blogger 文章抓取
         async function fetchAllArticles(feedUrl, startIndex = 1) {
             setLoading(true);
             updateLoadingStatus(`同步中 (${startIndex})...`);
             
             const secureUrl = feedUrl.replace('http://', 'https://');
-            // 修正 Blogger API 連結，確保包含必備參數
             const finalUrl = `${secureUrl}${secureUrl.includes('?') ? '&' : '?'}alt=json-in-script&start-index=${startIndex}&max-results=50`;
 
-            return new Promise((resolve, reject) => {
+            return new Promise((resolve) => {
                 const callbackName = 'blogger_cb_' + Math.random().toString(36).substr(2, 9);
                 const script = document.createElement('script');
                 
-                // 設置超時保護，防止永久卡死
                 const timeoutId = setTimeout(() => {
-                    setLoading(false);
                     cleanup();
-                    alert("同步超時，請檢查網址或網路。");
+                    setLoading(false);
                     resolve();
                 }, 15000);
 
@@ -252,7 +254,6 @@
                         
                         for (const entry of entries) {
                             const id = entry.id.$t;
-                            // 如果文章不存在才儲存內容
                             if (!state.articles.some(a => a.id === id)) {
                                 const content = entry.content ? entry.content.$t : (entry.summary ? entry.summary.$t : "");
                                 await saveContent(id, cleanHTML(content));
@@ -270,7 +271,6 @@
 
                         if (startIndex + entries.length <= totalResults && entries.length > 0) {
                             cleanup();
-                            // 遞迴請求下一頁
                             resolve(fetchAllArticles(feedUrl, startIndex + entries.length));
                         } else {
                             cleanup();
@@ -278,25 +278,19 @@
                             resolve();
                         }
                     } catch (err) {
-                        console.error("處理資料錯誤:", err);
                         cleanup();
                         setLoading(false);
                         resolve();
                     }
                 };
 
-                script.onerror = () => {
-                    cleanup();
-                    setLoading(false);
-                    alert("無法載入資料，請確認 Blogger 網址是否正確。");
-                    resolve();
-                };
-
+                script.onerror = () => { cleanup(); setLoading(false); resolve(); };
                 script.src = `${finalUrl}&callback=${callbackName}`;
                 document.body.appendChild(script);
             });
         }
 
+        // 渲染主介面
         function renderApp() {
             renderRecentRead();
             renderCategories();
@@ -359,19 +353,26 @@
 
             Object.keys(catsMap).sort().forEach(catName => {
                 const list = catsMap[catName];
+                const isExpanded = state.expandedCats.includes(catName);
+                
                 const div = document.createElement('div');
                 div.className = 'card rounded-2xl overflow-hidden mb-2 shadow-sm';
                 
+                // 標題區域
                 const header = document.createElement('button');
                 header.className = 'w-full p-4 flex justify-between items-center font-bold text-sm touch-action-none';
-                header.innerHTML = `<span>${catName} <span class="opacity-30 ml-1">(${list.length})</span></span><i class="fa-solid fa-chevron-down opacity-20 transition-transform"></i>`;
+                header.innerHTML = `
+                    <span>${catName} <span class="opacity-30 ml-1">(${list.length})</span></span>
+                    <i class="fa-solid fa-chevron-down opacity-20 transition-transform ${isExpanded ? 'rotate-180' : ''}"></i>
+                `;
                 
+                // 長按刪除分類，短按展開
                 addLongPress(header, () => {
                     if (confirm(`確定刪除「${catName}」分類下的所有文章與緩存？`)) deleteCategory(catName);
-                }, () => toggleCat(header));
+                }, () => toggleCat(catName));
 
                 const listDiv = document.createElement('div');
-                listDiv.className = 'cat-list hidden border-t border-[var(--border-color)] bg-black/5 p-2 space-y-2';
+                listDiv.className = `cat-list ${isExpanded ? '' : 'hidden'} border-t border-[var(--border-color)] bg-black/5 p-2 space-y-2`;
                 
                 list.forEach(a => {
                     const prog = state.progress[a.id] || { percent: 0 };
@@ -393,6 +394,7 @@
             });
         }
 
+        // 長按與短按區分邏輯
         function addLongPress(el, onLong, onClick) {
             let timer;
             let moved = false;
@@ -422,6 +424,17 @@
             el.addEventListener('mouseleave', () => clearTimeout(timer));
         }
 
+        // 展開/收合分類
+        function toggleCat(catName) {
+            if (state.expandedCats.includes(catName)) {
+                state.expandedCats = state.expandedCats.filter(c => c !== catName);
+            } else {
+                state.expandedCats.push(catName);
+            }
+            renderCategories(); // 重新渲染列表部分
+        }
+
+        // 開啟閱讀器
         async function openReader(id, catName) {
             const art = state.articles.find(a => a.id === id);
             if (!art) return;
@@ -461,6 +474,7 @@
             }
             state.articles = state.articles.filter(a => !a.categories.includes(catName));
             delete state.lastReadByCat[catName];
+            state.expandedCats = state.expandedCats.filter(c => c !== catName);
             saveAndRender();
         }
 
@@ -472,19 +486,6 @@
             state.progress[state.currentArticleId] = { top: b.scrollTop, percent: Math.min(pct, 100) };
             localStorage.setItem('br_progress_v4', JSON.stringify(state.progress));
             document.getElementById('progress').style.width = pct + '%';
-        }
-
-        function toggleCat(btn) {
-            const list = btn.nextElementSibling;
-            const icon = btn.querySelector('i');
-            const isHidden = list.classList.contains('hidden');
-            if (isHidden) {
-                list.classList.remove('hidden');
-                icon.classList.add('rotate-180');
-            } else {
-                list.classList.add('hidden');
-                icon.classList.remove('rotate-180');
-            }
         }
 
         function updateNavigationButtons() {
@@ -523,8 +524,7 @@
                 const url = new URL(val);
                 let feed = `${url.origin}/feeds/posts/default`;
                 if (val.includes('/search/label/')) {
-                    const parts = val.split('/search/label/');
-                    const label = parts[1].split('?')[0];
+                    const label = val.split('/search/label/')[1].split('?')[0];
                     feed = `${url.origin}/feeds/posts/default/-/${label}`;
                 }
                 if (!state.sources.includes(feed)) {
@@ -552,7 +552,11 @@
 
         function toggleTheme() { state.settings.theme = state.settings.theme === 'light' ? 'dark' : 'light'; applySettings(); }
         function toggleSettings() { document.getElementById('settingsPanel').classList.toggle('hidden'); }
-        function updateStyle(p, v) { state.settings[p] += v; applySettings(); }
+        function updateStyle(p, v) { 
+            state.settings[p] += v; 
+            document.getElementById('fontSizeVal').innerText = state.settings.fontSize + 'px';
+            applySettings(); 
+        }
         function saveAndRender() { localStorage.setItem('br_articles_v4', JSON.stringify(state.articles)); renderApp(); }
         function closeReader() { document.getElementById('readerModal').classList.add('hidden'); document.body.style.overflow = 'auto'; renderApp(); }
         function setLoading(v) { document.getElementById('loadingOverlay').classList.toggle('hidden', !v); }
