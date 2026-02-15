@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Blogger Reader Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #f3f4f6;
+            --text-color: #1f2937;
+            --card-bg: #ffffff;
+            --border-color: #e5e7eb;
+            --primary-color: #2563eb;
+            --btn-secondary-bg: #e5e7eb;
+            --btn-secondary-text: #374151;
+        }
+
+        [data-theme='dark'] {
+            --bg-color: #0f172a;
+            --text-color: #f1f5f9;
+            --card-bg: #1e293b;
+            --border-color: #334155;
+            --primary-color: #60a5fa;
+            --btn-secondary-bg: #334155;
+            --btn-secondary-text: #f1f5f9;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, "PingFang TC", "Heiti TC", "Microsoft JhengHei", sans-serif;
+            transition: background-color 0.2s;
+        }
+
+        .card { background-color: var(--card-bg); border: 1px solid var(--border-color); }
+        .btn-secondary { background-color: var(--btn-secondary-bg); color: var(--btn-secondary-text); }
+
+        .reader-content {
+            line-height: var(--line-height, 1.7);
+            font-size: var(--font-size, 17px);
+            letter-spacing: var(--letter-spacing, 0.03em);
+        }
+
+        .reader-content p { margin-bottom: var(--paragraph-spacing, 1.5em); }
+        .reader-content img {
+            max-width: 100% !important;
+            height: auto !important;
+            border-radius: 12px;
+            margin: 2rem auto;
+            display: block;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+
+        .progress-bar {
+            height: 3px;
+            background: var(--primary-color);
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 100;
+            transition: width 0.2s ease-out;
+        }
+
+        .loading-overlay {
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <div id="progress" class="progress-bar" style="width: 0%"></div>
+
+    <!-- 載入中遮罩 -->
+    <div id="loadingOverlay" class="fixed inset-0 z-[100] hidden flex-col items-center justify-center loading-overlay">
+        <div class="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent mb-4"></div>
+        <p class="text-white font-medium" id="loadingStatus">正在處理資料...</p>
+    </div>
+
+    <!-- 主頁面 -->
+    <div id="app" class="max-w-md mx-auto px-4 pt-8 pb-24">
+        <header class="mb-8">
+            <h1 class="text-2xl font-black mb-6 flex items-center gap-3">
+                <span class="bg-blue-600 text-white p-2 rounded-lg"><i class="fa-solid fa-book-open"></i></span>
+                Blogger Reader
+            </h1>
+            
+            <div class="space-y-3">
+                <div class="flex gap-2">
+                    <input type="text" id="urlInput" placeholder="輸入 Blogger 網址或標籤網址" 
+                        class="flex-1 p-4 rounded-2xl card focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm shadow-sm">
+                    <button onclick="addSource()" class="bg-blue-600 text-white w-14 rounded-2xl shadow-lg active:scale-95 transition flex items-center justify-center">
+                        <i class="fa-solid fa-plus text-lg"></i>
+                    </button>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="refreshAll()" class="btn-secondary flex-1 p-4 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-sm active:scale-95 transition">
+                        <i class="fa-solid fa-rotate" id="refreshIcon"></i> 同步所有分類
+                    </button>
+                    <button onclick="clearCache()" class="btn-secondary p-4 rounded-2xl text-sm font-bold shadow-sm active:scale-95 transition text-red-500">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 分類容器 -->
+        <div id="categoriesContainer" class="space-y-10"></div>
+
+        <!-- 分頁 -->
+        <div id="pagination" class="mt-12 mb-24 flex justify-between items-center hidden">
+            <button onclick="changePage(-1)" id="prevBtn" class="px-5 py-2 btn-secondary rounded-xl text-sm font-bold disabled:opacity-30">上一頁</button>
+            <span id="pageDisplay" class="text-xs font-bold opacity-60">第 1 頁</span>
+            <button onclick="changePage(1)" id="nextBtn" class="px-5 py-2 btn-secondary rounded-xl text-sm font-bold disabled:opacity-30">下一頁</button>
+        </div>
+    </div>
+
+    <!-- 閱讀器 -->
+    <div id="readerModal" class="fixed inset-0 z-50 hidden flex flex-col bg-[var(--bg-color)]">
+        <nav class="flex items-center justify-between p-4 border-b border-[var(--border-color)] card">
+            <button onclick="closeReader()" class="p-2 w-10 h-10 flex items-center justify-center"><i class="fa-solid fa-arrow-left text-xl"></i></button>
+            <div class="flex gap-2">
+                <button onclick="toggleSettings()" class="p-2 w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/5"><i class="fa-solid fa-font"></i></button>
+                <button onclick="toggleTheme()" class="p-2 w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/5"><i id="themeIcon" class="fa-solid fa-moon"></i></button>
+            </div>
+        </nav>
+        
+        <!-- 設定選單 -->
+        <div id="settingsPanel" class="hidden absolute top-16 right-4 w-72 card p-6 rounded-3xl shadow-2xl z-50">
+            <h4 class="text-xs font-black uppercase tracking-widest text-blue-500 mb-6">排版偏好</h4>
+            <div class="space-y-6">
+                <div class="flex items-center justify-between">
+                    <span class="text-sm font-bold">文字大小</span>
+                    <div class="flex bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
+                        <button onclick="updateStyle('fontSize', -1)" class="w-10 h-10 flex items-center justify-center">-</button>
+                        <span id="fontSizeVal" class="w-12 h-10 flex items-center justify-center text-xs font-bold">17px</span>
+                        <button onclick="updateStyle('fontSize', 1)" class="w-10 h-10 flex items-center justify-center">+</button>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-sm font-bold">行間距</span>
+                    <div class="flex bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
+                        <button onclick="updateStyle('lineHeight', -0.1)" class="w-10 h-10 flex items-center justify-center">-</button>
+                        <span id="lineHeightVal" class="w-12 h-10 flex items-center justify-center text-xs font-bold">1.7</span>
+                        <button onclick="updateStyle('lineHeight', 0.1)" class="w-10 h-10 flex items-center justify-center">+</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="articleBody" class="flex-1 overflow-y-auto px-6 pt-8 scroll-smooth">
+            <h1 id="articleTitle" class="text-2xl font-black mb-4 leading-tight"></h1>
+            <div id="articleMeta" class="text-xs font-bold opacity-40 mb-8 flex gap-4"></div>
+            <div id="articleText" class="reader-content pb-32"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- IndexedDB 管理：儲存大量 HTML 內容 ---
+        const DB_NAME = 'BloggerReaderDB';
+        const DB_VERSION = 1;
+        let db;
+
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains('contents')) {
+                        db.createObjectStore('contents', { keyPath: 'id' });
+                    }
+                };
+                request.onsuccess = (e) => {
+                    db = e.target.result;
+                    resolve(db);
+                };
+                request.onerror = (e) => reject(e);
+            });
+        }
+
+        async function saveContent(id, html) {
+            return new Promise((resolve) => {
+                const tx = db.transaction('contents', 'readwrite');
+                tx.objectStore('contents').put({ id, html });
+                tx.oncomplete = () => resolve();
+            });
+        }
+
+        async function getContent(id) {
+            return new Promise((resolve) => {
+                const tx = db.transaction('contents', 'readonly');
+                const request = tx.objectStore('contents').get(id);
+                request.onsuccess = () => resolve(request.result ? request.result.html : null);
+                request.onerror = () => resolve(null);
+            });
+        }
+
+        async function removeContent(id) {
+            return new Promise((resolve) => {
+                const tx = db.transaction('contents', 'readwrite');
+                tx.objectStore('contents').delete(id);
+                tx.oncomplete = () => resolve();
+            });
+        }
+
+        // --- 應用程式狀態 ---
+        let state = {
+            sources: JSON.parse(localStorage.getItem('br_sources') || '[]'),
+            // 列表僅儲存 meta 資訊，不儲存內文以節省 localStorage 空間
+            articles: JSON.parse(localStorage.getItem('br_articles') || '[]'),
+            progress: JSON.parse(localStorage.getItem('br_progress') || '{}'),
+            settings: JSON.parse(localStorage.getItem('br_settings') || '{"theme":"light","fontSize":17,"lineHeight":1.7,"letterSpacing":0.03,"paragraphSpacing":1.5}'),
+            currentPage: 1,
+            pageSize: 15,
+            currentArticleId: null,
+            isFetching: false
+        };
+
+        window.onload = async () => {
+            try {
+                await initDB();
+                applySettings();
+                renderApp();
+                document.getElementById('articleBody').addEventListener('scroll', throttle(saveReadingProgress, 200));
+            } catch (e) {
+                console.error("DB Init Error", e);
+                alert("無法初始化本地資料庫，請重新整理頁面。");
+            }
+        };
+
+        // --- 資料獲取 ---
+        async function fetchAllArticles(baseUrl, startIndex = 1) {
+            state.isFetching = true;
+            updateLoadingStatus(`載入中... 第 ${Math.ceil(startIndex/50) + 1} 頁`);
+            
+            const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}alt=json-in-script&start-index=${startIndex}&max-results=50`;
+            
+            return new Promise((resolve) => {
+                const callbackName = 'cb_' + Math.random().toString(36).substr(2, 9);
+                const script = document.createElement('script');
+                
+                window[callbackName] = async (data) => {
+                    const entries = data.feed.entry || [];
+                    const totalResults = parseInt(data.feed.openSearch$totalResults.$t);
+                    
+                    await processBloggerData(entries, baseUrl);
+
+                    document.body.removeChild(script);
+                    delete window[callbackName];
+
+                    if (startIndex + entries.length <= totalResults && entries.length > 0) {
+                        resolve(fetchAllArticles(baseUrl, startIndex + entries.length));
+                    } else {
+                        state.isFetching = false;
+                        setLoading(false);
+                        resolve();
+                    }
+                };
+
+                script.src = `${url}&callback=${callbackName}`;
+                document.body.appendChild(script);
+            });
+        }
+
+        async function processBloggerData(entries, sourceUrl) {
+            const existingIds = new Set(state.articles.map(a => a.id));
+            
+            for (const entry of entries) {
+                const id = entry.id.$t;
+                if (!existingIds.has(id)) {
+                    const cats = entry.category ? entry.category.map(c => c.term) : ["未分類"];
+                    const content = entry.content ? entry.content.$t : (entry.summary ? entry.summary.$t : "");
+                    const link = entry.link.find(l => l.rel === 'alternate')?.href;
+                    
+                    // 1. 內文存入 IndexedDB
+                    await saveContent(id, cleanHTML(content));
+                    
+                    // 2. 列表存入 localStorage (不含 content)
+                    state.articles.push({
+                        id,
+                        title: entry.title.$t,
+                        published: entry.published.$t,
+                        categories: cats,
+                        link,
+                        sourceUrl
+                    });
+                }
+            }
+
+            state.articles.sort((a, b) => new Date(b.published) - new Date(a.published));
+            saveAndRender();
+        }
+
+        function addSource() {
+            const input = document.getElementById('urlInput');
+            let url = input.value.trim();
+            if (!url) return;
+
+            try {
+                const urlObj = new URL(url);
+                const baseUrl = urlObj.origin;
+                let finalUrl = `${baseUrl}/feeds/posts/default`;
+                
+                if (url.includes('/search/label/')) {
+                    const label = url.split('/search/label/')[1].split('?')[0];
+                    finalUrl = `${baseUrl}/feeds/posts/default/-/${label}`;
+                }
+
+                if (!state.sources.includes(finalUrl)) {
+                    state.sources.push(finalUrl);
+                    localStorage.setItem('br_sources', JSON.stringify(state.sources));
+                }
+                
+                setLoading(true);
+                fetchAllArticles(finalUrl).then(() => {
+                    input.value = '';
+                });
+            } catch (e) {
+                alert("網址解析失敗，請輸入完整 Blogger 網址");
+            }
+        }
+
+        function refreshAll() {
+            if (state.sources.length === 0) return;
+            setLoading(true);
+            const tasks = state.sources.map(s => fetchAllArticles(s));
+            Promise.all(tasks).then(() => setLoading(false));
+        }
+
+        // --- UI 渲染 ---
+        function renderApp() {
+            const container = document.getElementById('categoriesContainer');
+            container.innerHTML = '';
+
+            if (state.articles.length === 0) {
+                container.innerHTML = `<div class="text-center py-24 opacity-30 font-bold">尚無內容</div>`;
+                document.getElementById('pagination').classList.add('hidden');
+                return;
+            }
+
+            const start = (state.currentPage - 1) * state.pageSize;
+            const paged = state.articles.slice(start, start + state.pageSize);
+
+            const groups = {};
+            paged.forEach(art => {
+                art.categories.forEach(c => {
+                    if (!groups[c]) groups[c] = [];
+                    groups[c].push(art);
+                });
+            });
+
+            Object.keys(groups).forEach(cat => {
+                const groupEl = document.createElement('div');
+                groupEl.innerHTML = `
+                    <div class="flex justify-between items-center mb-5">
+                        <h2 class="text-sm font-black uppercase tracking-widest text-blue-500"># ${cat}</h2>
+                        <button onclick="deleteCategory('${cat}')" class="text-[10px] font-bold opacity-30 hover:opacity-100 uppercase tracking-tighter">刪除分類</button>
+                    </div>
+                    <div class="space-y-3">
+                        ${groups[cat].map(a => renderCard(a)).join('')}
+                    </div>
+                `;
+                container.appendChild(groupEl);
+            });
+
+            updatePagination();
+        }
+
+        function renderCard(article) {
+            const prog = state.progress[article.id] || { percent: 0 };
+            const isDone = prog.percent > 98;
+            return `
+                <div class="card p-5 rounded-3xl shadow-sm flex items-center gap-4 active:scale-95 transition" onclick="openReader('${article.id}')">
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-bold text-[15px] leading-snug mb-3 ${isDone ? 'opacity-40 font-normal' : ''}">${article.title}</h3>
+                        <div class="h-1 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                            <div class="h-full bg-blue-500 transition-all duration-500" style="width: ${prog.percent}%"></div>
+                        </div>
+                    </div>
+                    <button onclick="event.stopPropagation(); deleteArticle('${article.id}')" class="p-2 opacity-10 hover:opacity-100">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            `;
+        }
+
+        async function openReader(id) {
+            const art = state.articles.find(a => a.id === id);
+            if (!art) return;
+
+            setLoading(true);
+            updateLoadingStatus("載入內文中...");
+            const htmlContent = await getContent(id);
+            setLoading(false);
+
+            if (!htmlContent) {
+                alert("找不到內文資料，可能已被清理。請嘗試同步更新。");
+                return;
+            }
+
+            state.currentArticleId = id;
+            document.getElementById('articleTitle').innerText = art.title;
+            document.getElementById('articleMeta').innerHTML = `<span>${new Date(art.published).toLocaleDateString()}</span><span>${art.categories[0]}</span>`;
+            document.getElementById('articleText').innerHTML = htmlContent;
+            
+            document.getElementById('readerModal').classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+
+            const saved = state.progress[id];
+            if (saved) {
+                setTimeout(() => document.getElementById('articleBody').scrollTop = saved.top, 50);
+            } else {
+                document.getElementById('articleBody').scrollTop = 0;
+            }
+        }
+
+        function cleanHTML(html) {
+            const d = new DOMParser().parseFromString(html, 'text/html');
+            // 更激進的清理
+            d.querySelectorAll('script, style, iframe, .blogger-post-footer, link, meta, noscript').forEach(n => n.remove());
+            d.querySelectorAll('[style]').forEach(el => {
+                if (!el.tagName.toLowerCase() === 'img') el.removeAttribute('style');
+            });
+            return d.body.innerHTML;
+        }
+
+        function updatePagination() {
+            const total = Math.ceil(state.articles.length / state.pageSize);
+            const nav = document.getElementById('pagination');
+            if (total <= 1) return nav.classList.add('hidden');
+            
+            nav.classList.remove('hidden');
+            document.getElementById('pageDisplay').innerText = `PAGE ${state.currentPage} / ${total}`;
+            document.getElementById('prevBtn').disabled = state.currentPage === 1;
+            document.getElementById('nextBtn').disabled = state.currentPage === total;
+        }
+
+        function changePage(d) {
+            state.currentPage += d;
+            window.scrollTo(0,0);
+            renderApp();
+        }
+
+        function saveReadingProgress() {
+            if (!state.currentArticleId) return;
+            const b = document.getElementById('articleBody');
+            const total = b.scrollHeight - b.clientHeig
