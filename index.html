@@ -16,6 +16,7 @@
             --secondary-btn-bg: #e5e7eb;
             --secondary-btn-text: #374151;
             --progress-track: #e5e7eb;
+            --settings-bg: #ffffff;
         }
 
         [data-theme='dark'] {
@@ -27,6 +28,7 @@
             --secondary-btn-bg: #334155;
             --secondary-btn-text: #f1f5f9;
             --progress-track: #334155;
+            --settings-bg: #1e293b;
         }
 
         body {
@@ -41,17 +43,16 @@
         .card { background-color: var(--card-bg); border: 1px solid var(--border-color); }
         .btn-secondary { background-color: var(--secondary-btn-bg); color: var(--secondary-btn-text); }
         
-        /* 閱讀器內文動態樣式 */
         .reader-content {
             line-height: var(--line-height, 1.7);
             font-size: var(--font-size, 17px);
         }
 
-        /* 已讀標籤：灰色且有刪除線 */
+        /* 已讀樣式優化 */
         .is-read { 
             color: #9ca3af !important; 
             text-decoration: line-through !important; 
-            opacity: 0.6;
+            opacity: 0.5;
         }
 
         .progress-bar {
@@ -76,7 +77,6 @@
             100% { transform: translateX(0); }
         }
         .shaking { animation: shake 0.2s infinite; }
-
         .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
@@ -139,25 +139,24 @@
             </div>
         </nav>
         
-        <div id="settingsPanel" class="hidden absolute top-16 right-4 w-72 card p-6 rounded-3xl shadow-2xl z-50">
+        <!-- 修正配色後的排版面板 -->
+        <div id="settingsPanel" class="hidden absolute top-16 right-4 w-72 p-6 rounded-3xl shadow-2xl z-50 border border-[var(--border-color)]" style="background-color: var(--settings-bg); color: var(--text-color);">
             <h4 class="text-xs font-black uppercase tracking-widest text-blue-500 mb-6">排版偏好</h4>
             <div class="space-y-6">
-                <!-- 文字大小設定 -->
                 <div class="flex items-center justify-between">
                     <span class="text-sm font-bold">文字大小</span>
-                    <div class="flex bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
-                        <button onclick="updateStyle('fontSize', -1)" class="w-8 h-8 flex items-center justify-center">-</button>
-                        <span id="fontSizeVal" class="w-12 h-8 flex items-center justify-center text-xs font-bold">17px</span>
-                        <button onclick="updateStyle('fontSize', 1)" class="w-8 h-8 flex items-center justify-center">+</button>
+                    <div class="flex bg-black/5 dark:bg-white/5 rounded-xl p-1">
+                        <button onclick="updateStyle('fontSize', -1)" class="w-8 h-8 flex items-center justify-center font-bold text-lg">-</button>
+                        <span id="fontSizeVal" class="w-14 h-8 flex items-center justify-center text-xs font-bold">17px</span>
+                        <button onclick="updateStyle('fontSize', 1)" class="w-8 h-8 flex items-center justify-center font-bold text-lg">+</button>
                     </div>
                 </div>
-                <!-- 行距設定 -->
                 <div class="flex items-center justify-between">
                     <span class="text-sm font-bold">行距大小</span>
-                    <div class="flex bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
-                        <button onclick="updateStyle('lineHeight', -0.1)" class="w-8 h-8 flex items-center justify-center">-</button>
-                        <span id="lineHeightVal" class="w-12 h-8 flex items-center justify-center text-xs font-bold">1.7</span>
-                        <button onclick="updateStyle('lineHeight', 0.1)" class="w-8 h-8 flex items-center justify-center">+</button>
+                    <div class="flex bg-black/5 dark:bg-white/5 rounded-xl p-1">
+                        <button onclick="updateStyle('lineHeight', -0.1)" class="w-8 h-8 flex items-center justify-center font-bold text-lg">-</button>
+                        <span id="lineHeightVal" class="w-14 h-8 flex items-center justify-center text-xs font-bold">1.7</span>
+                        <button onclick="updateStyle('lineHeight', 0.1)" class="w-8 h-8 flex items-center justify-center font-bold text-lg">+</button>
                     </div>
                 </div>
             </div>
@@ -382,9 +381,9 @@
                 
                 list.forEach(a => {
                     const prog = state.progress[a.id] || { percent: 0 };
-                    const isRead = prog.percent > 95;
+                    // 修正：明確轉換百分比並判定已讀
+                    const isRead = parseFloat(prog.percent) >= 95;
                     const item = document.createElement('div');
-                    // 同步套用已讀樣式
                     item.className = `p-3 bg-[var(--card-bg)] rounded-xl text-xs font-medium shadow-sm active:scale-[0.98] transition cursor-pointer select-none ${isRead ? 'is-read' : ''}`;
                     item.innerText = a.title;
                     
@@ -541,13 +540,11 @@
             const icon = state.settings.theme === 'light' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
             document.getElementById('mainThemeIcon').className = icon;
             
-            // 應用文字大小與行距
             document.documentElement.style.setProperty('--font-size', state.settings.fontSize + 'px');
             document.documentElement.style.setProperty('--line-height', state.settings.lineHeight);
             
-            // 更新 UI 數值
             document.getElementById('fontSizeVal').innerText = state.settings.fontSize + 'px';
-            document.getElementById('lineHeightVal').innerText = state.settings.lineHeight.toFixed(1);
+            document.getElementById('lineHeightVal').innerText = parseFloat(state.settings.lineHeight).toFixed(1);
             
             localStorage.setItem('br_settings_v4', JSON.stringify(state.settings));
         }
@@ -586,17 +583,38 @@
             return d.body.innerHTML;
         }
 
-        function toggleTheme() { state.settings.theme = state.settings.theme === 'light' ? 'dark' : 'light'; applySettings(); renderApp(); }
-        function toggleSettings() { document.getElementById('settingsPanel').classList.toggle('hidden'); }
+        function toggleTheme() { 
+            state.settings.theme = state.settings.theme === 'light' ? 'dark' : 'light'; 
+            applySettings(); 
+            renderApp(); 
+        }
+
+        function toggleSettings() { 
+            const panel = document.getElementById('settingsPanel');
+            panel.classList.toggle('hidden'); 
+        }
         
-        function updateStyle(p, v) { 
-            state.settings[p] += v; 
-            // 數值限制
-            if (p === 'fontSize' && state.settings[p] < 12) state.settings[p] = 12;
-            if (p === 'fontSize' && state.settings[p] > 32) state.settings[p] = 32;
-            if (p === 'lineHeight' && state.settings[p] < 1.2) state.settings[p] = 1.2;
-            if (p === 'lineHeight' && state.settings[p] > 2.5) state.settings[p] = 2.5;
+        // 修正後的數值運算函數
+        function updateStyle(prop, delta) { 
+            let currentVal = parseFloat(state.settings[prop]);
+            if (isNaN(currentVal)) {
+                // 如果是遺失或損壞的數值，重設為預設
+                currentVal = prop === 'fontSize' ? 17 : 1.7;
+            }
             
+            let newVal = currentVal + delta;
+            
+            // 範圍限制
+            if (prop === 'fontSize') {
+                if (newVal < 12) newVal = 12;
+                if (newVal > 32) newVal = 32;
+            }
+            if (prop === 'lineHeight') {
+                if (newVal < 1.2) newVal = 1.2;
+                if (newVal > 2.5) newVal = 2.5;
+            }
+            
+            state.settings[prop] = newVal;
             applySettings(); 
         }
         
